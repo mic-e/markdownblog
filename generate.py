@@ -4,6 +4,7 @@ import os
 import itertools
 import html
 import re
+import time
 from collections import defaultdict
 
 blogname = 'sftblog'
@@ -28,74 +29,174 @@ def markdownescape(s):
                    for c in s)
 
 
-def error(msg):
-    print(msg)
-    exit(1)
+def markdownlist(l):
+    return '- ' + '\n- '.join(l)
+
+
+def readfile(fname, *hdr):
+    try:
+        raw = open(fname).read()
+    except:
+        raise Exception("%s: cound not read" % fname)
+
+    lines = raw.split('\n')
+
+    for lineno, l in enumerate(lines):
+        if l == '':
+            break
+
+        k, v = l.split(': ', maxsplit=1)
+        k = k.strip().lower()
+        v = v.strip()
+
+        for key in hdr:
+            if k in key.names:
+                try:
+                    key.parse(v)
+                except Exception as e:
+                    raise Exception("%s:%d: %s"
+                                    % (fname, lineno, e.args[0])) from e
+                break
+        else:
+            raise Exception("%s:%d: unknown key %s" % (fname, lineno, k))
+
+    for key in hdr:
+        try:
+            key.check()
+        except Exception as e:
+            raise Exception("%s: header invalid: %s"
+                            % (fname, e.args[0])) from e
+
+    return {key.names[0]: key for key in hdr}, '\n'.join(lines[lineno + 1:])
+
+
+class Key:
+    """
+    a key in a markdown header
+    """
+    def __init__(self, *names, argc=1, default=None, listsep=None,
+                 allowemptylines=False, testfun=None):
+        """
+        names:
+            list of names for this key
+        argc:
+            either an integer, or one of '?*+'
+        default:
+            if not None, an empty value list is replaced by this.
+            may be a list of values.
+        listsep:
+            if not None, multiple items can be specified in one line,
+            separated by listsep (example: ',')
+        allowemptylines:
+            if True, lines may contain no value(s
+        testfun:
+            a callable that is invoked for every value, and may raise
+            an exception if the value is unfit
+        """
+        self.names = names
+        self.argc = argc
+        self.default = default
+        self.listsep = listsep
+        self.allowemptylines = allowemptylines
+        self.testfun = testfun
+
+        self.vals = []
+
+        self.minvals = 0
+        self.maxvals = float('inf')
+        if type(argc) == int:
+            if argc == 1:
+                self.expected = "one value"
+            else:
+                self.expected = "%d values" % argc
+            self.minvals = self.maxvals = argc
+        elif argc == '?':
+            self.expected = "at most one value"
+            self.maxvals = 1
+        elif argc == '*':
+            self.expected = "any number of values"
+        elif argc == '+':
+            self.expected = "at least one value"
+            self.minvals = 1
+        else:
+            raise Exception("illegal arg count specifier: %s" % argc)
+
+    def parse(self, v):
+        """
+        parses a value from one header line, and appends the values to vals
+        """
+        if self.listsep is None:
+            vals = [v]
+        else:
+            vals = v.split(self.listsep)
+
+        vals = [v.strip() for v in vals if v.strip()]
+
+        if not vals and not allowempty:
+            raise Exception("empty value")
+
+        for v in vals:
+            if self.testfun is not None:
+                self.testfun(v)
+            self.vals.append(v)
+
+    def check(self):
+        # apply default value(s)
+        if not self.vals and default is not None:
+            if type(default) == list:
+                self.vals = list(default)
+            else:
+                self.vals = [default]
+
+        if not self.minvals <= len(self.vals) <= self.maxvals:
+            raise Exception("expected %s, but got %s"
+                            % (self.expected, self.vals))
+
+        if self.maxvals == 1:
+            if self.vals:
+                self.val = self.vals[0]
+            else:
+                self.val = None
+
+
+def datetestfun(v):
+    try:
+        time.strptime(v, '%Y-%m-%d')
+    except Exception as e:
+        raise Exception("date is not YYYY-MM-DD: %s" % v) from e
+
+
+def identifiertestfun(v, name="identifier"):
+    if not v.isidentifier():
+        raise Exception("not a valid %s: %s" % (name, v))
 
 
 class Post:
-    def gethdrval(self, lineno, kexpected):
-        if len(self.raw) <= lineno:
-            error("%s: header incomplete" % self.fname)
-        try:
-            k, v = l.split(': ', maxsplit=1)
-        except:
-            error("%s: invalid header line format: %s" % (self.fname, l))
-
-        if k.strip().lower() != kexpected.strip().lower():
-            error("%s: expected key: %s, but got %s in line %d"
-                  % (self.fname, kexpected, k, lineno))
-
-        return v.strip()
-
-    def __init__(self, fname, existingposts):
+    def __init__(self, fname):
         self.fname = fname
-        self.raw = open("post-%s" % fname).read().split('\n')
 
-        self.title = self.gethdrval(0, 'title')
+        hdrkeys = [Key('title'),
+                   Key('authors', 'author', listsep=',', argc='+',
+                       testfun=lambda v: identifiertestfun(v, "author name")),
+                   Key('date', testfun=datetestfun),
+                   Key('tags', 'tag', listsep=',', argc='*',
+                       testfun=lambda v: identifiertestfun(v, "tag name"))]
+
+        hdr, self.content = readfile(fname, *hdrkeys)
+
+        self.title = hdr['title'].val
+        self.date = hdr['date'].val
+        self.authors = hdr['authors'].vals
+        self.tags = hdr['tags'].vals
+
+        self.url = '%s.html' % self.fname.rstrip('.md')
         self.escapedtitle = markdownescape(self.title)
-        self.date = self.gethdrval(1, 'date')
-        try:
-            time.strptime(self.date, '%Y-%m-%d')
-        except:
-            error("%s: date is not YYYY-MM-DD: %s" % (self.fname, self.date))
-        self.authors = self.gethdrval(2, 'authors').split(', ')
-        self.authors = [a.strip() for a in self.authors if a.strip()]
-        if not self.authors:
-            error("%s: no author given" % self.fname)
-        for a in self.authors:
-            if not a.isidentifier():
-                error("%s: illegal author name: %s" % (self.fname, a))
-        self.tags = gethdrval(3, 'tags').split(', ')
-        self.tags = [t.strip() for t in self.tags if t.strip()]
-        if not tags:
-            error("%s: no tags given" % self.fname)
-        for t in self.tags:
-            if not t.isidentifier():
-                error("%s: illegal tag name: %s" % (self.fname, t))
-        self.content = '\n'.join(self.raw[4:])
-
-        existingurls = {p.url for p in existingposts}
-        self.url = self.title.replace(' ', '-').replace('_', '-')
-        self.url = ''.join(c for c in self.url if c.isalnum() or c == '-')
-        if self.url in existingurls:
-            self.urlhead = self.url
-            for i in itertools.count():
-                self.url = "%s%d" % (self.urlhead, i)
-                if self.url not in existingurls:
-                    break
-
-        self.listingstring = "%s [%s](post-%s) by %s; tags: %s" % (
+        self.listingstring = "%s [%s](%s) by %s; tags: %s" % (
             self.date,
             self.escapedtitle,
             self.url,
-            ', '.join('[%s](author-%s)' % a for a in self.authors),
-            ', '.join('[%s](tag-%s)' % t for t in self.tags))
-
-        existingposts.append(self)
-
-    def to_html(self):
-        pass
+            ', '.join('[%s](author-%s.html)' % (a, a) for a in self.authors),
+            ', '.join('[%s](tag-%s.html)' % (t, t) for t in self.tags))
 
 tags = defaultdict(lambda: [])
 authors = defaultdict(lambda: [])
@@ -104,7 +205,8 @@ for f in reversed(sorted(os.listdir('.'), key=natural_sort_key)):
     if not f.endswith('.md') or not f.startswith('post-'):
         continue
 
-    post = Post(f, posts)
+    post = Post(f)
+    posts.append(post)
     for tag in post.tags:
         tags[tag].append(post)
     for author in post.authors:
@@ -114,28 +216,37 @@ for f in reversed(sorted(os.listdir('.'), key=natural_sort_key)):
 output = {}
 
 
-def addoutput(filename, markdowntemplate, **formatting):
+try:
+    import pygments
+    extensions = ['markdown.extensions.codehilite']
+except:
+    print('pygments not found; code highlighting disabled.')
+    extensions = []
+
+
+def addoutput(filename, htmltitle, markdowntemplate, **formatting):
     content = markdowntemplate.format(**formatting)
-    htmlcontent = markdown.markdown(content)
+    htmlcontent = markdown.markdown(content, extensions=['markdown.extensions.codehilite'])
     page = htmltemplate.format(title=html.escape(formatting['title']),
                                content=htmlcontent)
     output[filename] = page
 
 
-tlist = ', '.join("[%s](tag-%s)" % (t, t) for t in sorted(tags))
-alist = ', '.join("[%s](author-%s)" % (a, a) for a in sorted(authors))
+tlist = ', '.join("[%s](tag-%s.html)" % (t, t) for t in sorted(tags))
+alist = ', '.join("[%s](author-%s.html)" % (a, a) for a in sorted(authors))
 
 # generate index
 try:
-    indexcontent = open('indexcontent.md').read()
+    indexcontent = open('index.md').read()
 except:
     indexcontent = ''
-addoutput('index.html', indextemplate,
-          title=blogname,
+
+addoutput('index.html', blogname, indextemplate,
+          title="%s: index" % blogname,
           content=indexcontent,
           tags=tlist,
           authors=alist,
-          posts='\n\n'.join(p.listingstring for p in posts))
+          posts=markdownlist(p.listingstring for p in posts))
 
 # generate tags
 for tag in tags:
@@ -144,10 +255,9 @@ for tag in tags:
     except:
         content = ''
 
-    addoutput('tag-%s.html' % tag, tagtemplate,
-              title='%s: tag: %s' % (blogname, tag),
-              content=content,
-              posts='\n\n'.join(p.listingstring for p in tags[tag]))
+    addoutput('tag-%s.html' % tag, "%s: tag: %s" % (blogname, tag),
+              tagtemplate, title=tag, content=content,
+              posts=markdownlist(p.listingstring for p in tags[tag]))
 
 # generate authors
 for author in authors:
@@ -156,19 +266,17 @@ for author in authors:
     except:
         content = ''
 
-    addoutput('author-%s.html' % author, authortemplate,
-              title='%s: author: %s' % (blogname, author),
-              content=content,
-              posts='\n\n'.join(p.listingstring for p in authors[author]))
+    addoutput('author-%s.html' % author, "%s: author: %s" % (blogname, author),
+              authortemplate, title=author, content=content,
+              posts=markdownlist(p.listingstring for p in authors[author]))
 
 # generate posts
 for post in posts:
-    alist = ', '.join("[%s](author-%s)" % (a, a) for a in post.authors)
-    tlist = ', '.join("[%s](tag-%s)" % (t, t) for t in post.tags)
-    addoutput('post-%s.html' % post.url, posttemplate,
-              title='%s: %s' % (blogname, post.title),
-              authors=alist,
-              tags=tlist,
+    alist = ', '.join("[%s](author-%s.html)" % (a, a) for a in post.authors)
+    tlist = ', '.join("[%s](tag-%s.html)" % (t, t) for t in post.tags)
+
+    addoutput(post.url, "%s: %s" % (blogname, post.title), posttemplate,
+              title=post.title, authors=alist, date=post.date, tags=tlist,
               content=post.content)
 
 # write generated data
