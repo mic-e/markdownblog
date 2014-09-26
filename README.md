@@ -21,7 +21,7 @@
  - `tag-*.html` for each tag (lists all posts with that tag)
  - `post-*.html` for each post
 - Apart from `post-*.md`, you can optionally use `index.md`, `author-*.md` and `tag-*.md` to provide extra content for those pages
-- To auto-generate the blog from a post-receive hook, take a look at [post-receive](post-receive)
+- To auto-generate the blog from a post-receive hook, take a look at [post-receive](post-receive) (command to install: `git show post-receive > hooks/post-receive; chmod +x hooks/post-receive`)
 
 #### Dependencies
 
