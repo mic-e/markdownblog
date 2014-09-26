@@ -45,7 +45,7 @@ def readfile(fname, *hdr):
         if l == '':
             break
 
-        k, v = l.split(': ', maxsplit=1)
+        k, v = l.split(':', maxsplit=1)
         k = k.strip().lower()
         v = v.strip()
 
