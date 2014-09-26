@@ -16,7 +16,6 @@ authortemplate = open('author.md.template').read()
 posttemplate = open('post.md.template').read()
 
 
-
 def natural_sort_key(s, regex=re.compile('([0-9]+)')):
     return [int(text) if text.isdigit() else text.lower()
             for text in regex.split(s)]
@@ -45,7 +44,7 @@ class Post:
 
         if k.strip().lower() != kexpected.strip().lower():
             error("%s: expected key: %s, but got %s in line %d"
-                % (self.fname, kexpected, k, lineno))
+                  % (self.fname, kexpected, k, lineno))
 
         return v.strip()
 
@@ -78,7 +77,7 @@ class Post:
 
         existingurls = {p.url for p in existingposts}
         self.url = self.title.replace(' ', '-').replace('_', '-')
-        self.url = ''.join(c for c in self.url if c.isalnum() or c=='-')
+        self.url = ''.join(c for c in self.url if c.isalnum() or c == '-')
         if self.url in existingurls:
             self.urlhead = self.url
             for i in itertools.count():
@@ -113,6 +112,8 @@ for f in reversed(sorted(os.listdir('.'), key=natural_sort_key)):
 
 
 output = {}
+
+
 def addoutput(filename, markdowntemplate, **formatting):
     content = markdowntemplate.format(**formatting)
     htmlcontent = markdown.markdown(content)
@@ -131,7 +132,7 @@ except:
     indexcontent = ''
 addoutput('index.html', indextemplate,
           title=blogname,
-          content = indexcontent,
+          content=indexcontent,
           tags=tlist,
           authors=alist,
           posts='\n\n'.join(p.listingstring for p in posts))
