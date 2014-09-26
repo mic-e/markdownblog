@@ -1,4 +1,4 @@
-*Python Markdown blog* is a script to generates a static blog from a collection of posts in markdown format; it was written for usage with a git post-receive hook.
+*Python Markdown blog* is a script to generate a static blog from a collection of posts in markdown format; it was written for usage with a git post-receive hook.
 
 #### Usage
 
@@ -20,7 +20,8 @@
  - `author-*.html` for each author (lists all posts by that author)
  - `tag-*.html` for each tag (lists all posts with that tag)
  - `post-*.html` for each post
-- Apart from `post-*.md`, you can optionally use `index.md`, `author-*.md` and `tag-*.md` to provide extra content for those pages.
+- Apart from `post-*.md`, you can optionally use `index.md`, `author-*.md` and `tag-*.md` to provide extra content for those pages
+- To auto-generate the blog from a post-receive hook, take a look at [post-receive](post-receive)
 
 #### Dependencies
 

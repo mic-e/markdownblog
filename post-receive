@@ -1,0 +1,10 @@
+#!/bin/bash
+#
+# an example post-receive hook, to be placed in the hooks/ folder
+# of your bare repository.
+#
+export GIT_WORK_TREE=/var/www/blog
+
+git checkout -f
+cd "$GIT_WORK_TREE"
+./generate.py
